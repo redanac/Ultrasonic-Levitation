@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Feb 26 15:11:16 2019
+
+@author: redha
+"""
+
+import sys
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+
+# including build directory
+sys.path.insert(0, '../build/')
+
+# importing module
+import ultrasonics as us
+
+#defining the lengths and origin point of the simulation
+L = [0.1, 0.1, 0.1]
+origin = [-0.05, 0.005, -0.05]
+
+
+# creating an ultrasonics simulation
+sim = us.Simulation()
+
+n=14 #Number of transducers in 
+
+points=[]
+
+#creating triangular array
+for i in range(n,0,-1):
+    start=origin[0]+L[0]*(n-i)*0.5/n
+    for j in range(i):
+        tpos=(origin[2]+L[2]*(i+0.5)/n,0,start+L[0]*(j+0.5)/n)
+        points.append([tpos[0],tpos[2]])
+        
+          # creating a transducer
+        t = us.Transducer(tpos, [0, 1, 0])
+
+            # adding transducer to simulation
+        sim.add_transducer(t)
+               
+plt.scatter(*zip(*points)) #Shows transducer set up
+
+# defining particle mass and diameter
+pm = 7.176591426e-7
+pd = 0.0042
+
+# optimising the transducer phases for the laplacian in the x
+# direction at a point in space
+opt_point = [origin[0] + L[0] / 2, origin[1] + L[1] / 2, origin[2] + L[2] / 2]
+print("optimisation point:", opt_point)
+
+# optimising
+print("Optimising transducer phases")
+#sim.optimise_Gorkov_laplacian([opt_point], 2e-6, pm, pd, True, False, False, 60, 100, 1e-0)
+#sim.optimise_Gorkov_laplacian([opt_point], 2e-6, pm, pd, True, False, False, 100, 100, 1e-0, "LN_BOBYQA")
+sim.optimise_Gorkov_laplacian([opt_point], 2e-6, pm, pd, True, False, False, 100, 100, 1e-0, "LBFGS")
+
+print("phi:", sim.transducer(0).phi)
+us.dump(sim, "optimised_phi_x_laplacian_triangle.vtu")
+
+
+# # defining the number of points for the field we are about to create
+#N = [20, 20, 20]
+N = [100, 100, 1]
+L = [0.1, 0.1, 0.0]
+origin = [-0.04, 0.005, 0.0]
+
+
+# # calculating Gorkov potential field
+print("Calculating Gorkov potential field")
+gorkov = sim.Gorkov_potential_field(N, L, origin, pm, pd)
+
+# # outputing the Field to a vtr file viewable with Paraview
+print("outputing Gorkov field to file")
+us.dump(gorkov, "optimise_x_laplacian_triangle.vtr")
+
+pickle_obj = {"sim", sim}
+pickle.dump(sim, open("opt_sim_x_triangle.pkl", "wb"))
+
+opt_phi = []
+for t in range(sum(range(n+1))):
+    opt_phi.append(sim.transducer(t).phi)
+
+sim.focus(opt_point)
+
+for t in range(sum(range(n+1))):
+    opt_phi[t] -= sim.transducer(t).phi
+    opt_phi[t] = opt_phi[t] % (2 * np.pi)
+    
+print(opt_phi)
+
+normalised_transducers = []
+for t, phi in enumerate(opt_phi):
+    normalised_transducers.append(us.Transducer(sim.transducer(t).pos, sim.transducer(t).dir, phi))
+
+us.dump(normalised_transducers, "normalised_transducers_x_triangle.vtu")
+
+gorkov_field=np.zeros(((N[0]), (N[1]),(N[2])))
+
+for x in range(N[0]):
+    for y in range(N[1]):
+        for z in range (N[2]):
+            gorkov_field[x,y,z]=gorkov[x,y,z]
+
+file=open("Gorkov_field_triangle.pkl","wb")           
+pickle.dump(gorkov_field,file)
+file.close()
+
+
+
+
